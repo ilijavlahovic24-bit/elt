@@ -1,0 +1,29 @@
+# dbt/models/staging/sources.yml
+# Declares raw tables so dbt knows they exist, can track freshness, and
+# shows them in lineage. Without this, `source('raw','orders')` fails.
+
+version: 2
+
+sources:
+  - name: raw
+    description: "Raw layer, populated by warehouse/load_to_duckdb.py from data/raw/orders/"
+    schema: raw
+    tables:
+      - name: orders
+        description: "One row per order line, no transformation applied."
+        loaded_at_field: order_date
+        freshness:
+          # If raw hasn't been refreshed in 24h, warn; 48h, error.
+          # Note: order_date is the business date, not load time. In a real
+          # pipeline we'd have _loaded_at column. We use this here as a
+          # teaching stand-in; the mechanism is what matters.
+          warn_after: {count: 24, period: hour}
+          error_after: {count: 48, period: hour}
+        columns:
+          - name: order_id
+          - name: customer_id
+          - name: product_id
+          - name: quantity
+          - name: unit_price
+          - name: order_date
+          - name: region

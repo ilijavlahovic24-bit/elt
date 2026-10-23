@@ -18,7 +18,7 @@ from pathlib import Path
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
-
+from datetime import date, datetime, timezone, timedelta
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
@@ -94,6 +94,62 @@ def extract_from_api_paginated(base_url: str, page_size: int = 100) -> pd.DataFr
 # -------------------------------------------------------------------------
 # 2. Schema drift check
 # -------------------------------------------------------------------------
+def _dtype_matches(series: pd.Series, expected: str) -> bool:
+    """
+    Compare dtype semantically, not by string name.
+    Pandas 2.x: strings -> 'object'. Pandas 3.x: strings -> 'str' (StringDtype).
+    Same for int32/int64, float32/float64. Value inspection is the final
+    fallback when pandas' own helpers disagree across versions.
+    """
+    dt = series.dtype
+    dt_str = str(dt).lower()
+
+    if expected in ("string", "object"):
+        # 1. Any dtype name that contains "str" (str, string, str[pyarrow], string[python])
+        if "str" in dt_str or dt_str == "object":
+            return True
+        # 2. Pandas' own helpers - may or may not recognize the new StringDtype
+        if pd.api.types.is_string_dtype(dt) or pd.api.types.is_object_dtype(dt):
+            return True
+        # 3. Last resort: inspect actual values
+        sample = series.dropna().head(5)
+        return sample.empty or all(isinstance(v, str) for v in sample)
+
+    if expected in ("int64", "integer"):
+        return pd.api.types.is_integer_dtype(dt)
+
+    if expected in ("float64", "float"):
+        return pd.api.types.is_float_dtype(dt)
+
+    if expected.startswith("datetime"):
+        return pd.api.types.is_datetime64_any_dtype(dt)
+
+    if expected == "bool":
+        return pd.api.types.is_bool_dtype(dt)
+
+    return dt_str == expected
+
+def coerce_types(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    CSV readers always yield strings. Coerce string columns to their declared
+    types *before* check_schema runs, so schema check verifies the shape of
+    what we're about to write, not the raw CSV output.
+
+    This is where '2026-07-01' becomes a real date, so dbt can do date math.
+    """
+    df = df.copy()
+    for col, expected in EXPECTED_SCHEMA.items():
+        if col not in df.columns:
+            continue
+        if expected.startswith("datetime"):
+            df[col] = pd.to_datetime(df[col], errors="raise")
+        elif expected in ("int64", "integer"):
+            df[col] = pd.to_numeric(df[col], errors="raise").astype("int64")
+        elif expected in ("float64", "float"):
+            df[col] = pd.to_numeric(df[col], errors="raise").astype("float64")
+        # strings: leave as-is, CSV already gives them
+    return df
+
 def check_schema(df: pd.DataFrame) -> None:
     """
     Compare incoming schema against the contract.
@@ -101,31 +157,26 @@ def check_schema(df: pd.DataFrame) -> None:
     Three outcomes:
       - OK              -> proceed
       - backward compat -> log a warning, proceed (new columns are benign)
-      - breaking        -> raise, halt the pipeline (missing/renamed columns)
+      - breaking        -> raise, halt the pipeline (missing/renamed/type-changed)
     """
     expected_cols = set(EXPECTED_SCHEMA.keys())
-    actual_cols   = set(df.columns)
+    actual_cols = set(df.columns)
 
     missing = expected_cols - actual_cols
-    extra   = actual_cols   - expected_cols
+    extra = actual_cols - expected_cols
 
     if missing:
-        # Breaking: we lost data we rely on.
         raise ValueError(f"Schema drift (breaking): missing columns {sorted(missing)}")
 
     if extra:
-        # Backward compatible: new columns won't hurt downstream dbt models.
         log.warning("Schema drift (compatible): extra columns %s", sorted(extra))
 
-    # Type drift check on columns we do expect.
     for col in expected_cols & actual_cols:
-        expected_dtype = EXPECTED_SCHEMA[col]
-        actual_dtype = str(df[col].dtype)
-        if actual_dtype != expected_dtype:
+        expected = EXPECTED_SCHEMA[col]
+        if not _dtype_matches(df[col], expected):
             raise ValueError(
-                f"Schema drift (type): column '{col}' expected {expected_dtype}, got {actual_dtype}"
+                f"Schema drift (type): column '{col}' expected {expected}, got {df[col].dtype}"
             )
-
 
 # -------------------------------------------------------------------------
 # 3. Volume check
@@ -135,11 +186,7 @@ def check_volume(df: pd.DataFrame, run_date: date) -> None:
     Sanity: today's row count must be 80%..120% of yesterday's.
     First run has no baseline - skip.
     """
-    yesterday = run_date.replace(day=run_date.day - 1) if run_date.day > 1 else None
-    if yesterday is None:
-        log.info("Volume check skipped (no baseline)")
-        return
-
+    yesterday = run_date - timedelta(days=1)
     y_path = RAW_DIR / f"date={yesterday.isoformat()}" / "orders.parquet"
     if not y_path.exists():
         log.info("Volume check skipped (no baseline file)")
@@ -154,7 +201,6 @@ def check_volume(df: pd.DataFrame, run_date: date) -> None:
         raise ValueError(
             f"Volume anomaly: {today_rows} rows vs yesterday {y_rows} (ratio {ratio:.2f})"
         )
-
 
 # -------------------------------------------------------------------------
 # 4. Atomic write to partition
@@ -189,8 +235,9 @@ def main(run_date: date | None = None) -> None:
     run_date = run_date or datetime.now(timezone.utc).date()
 
     df = extract_from_csv(SOURCE_CSV)
-    check_schema(df)       # fail-fast on drift
-    check_volume(df, run_date)  # fail-fast on anomaly
+    df = coerce_types(df)        # CSV strings -> typed columns
+    check_schema(df)             # verify final shape
+    check_volume(df, run_date)   # volume sanity
     write_partition(df, run_date)
 
 

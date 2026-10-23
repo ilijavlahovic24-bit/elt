@@ -1,0 +1,68 @@
+# dbt/models/marts/schema.yml
+version: 2
+
+models:
+  - name: dim_date
+    description: "Date spine covering the full range of order dates."
+    columns:
+      - name: date_sk
+        tests: [not_null, unique]
+      - name: date_day
+        tests: [not_null, unique]
+      - name: year
+        tests: [not_null]
+
+  - name: dim_customer
+    description: "One row per customer."
+    columns:
+      - name: customer_sk
+        tests: [not_null, unique]
+      - name: customer_id
+        tests: [not_null, unique]
+      - name: region
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['RS', 'DE', 'FR', 'IT', 'ES']
+
+  - name: dim_product
+    description: "One row per product."
+    columns:
+      - name: product_sk
+        tests: [not_null, unique]
+      - name: product_id
+        tests: [not_null, unique]
+
+  - name: fct_orders
+    description: "One row per order. Measures + FK to dimensions."
+    columns:
+      - name: order_id
+        tests: [not_null, unique]
+      - name: customer_sk
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customer')
+                field: customer_sk
+      - name: product_sk
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_product')
+                field: product_sk
+      - name: date_sk
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_sk
+      - name: quantity
+        tests: [not_null]
+      - name: unit_price
+        tests: [not_null]
+      - name: gross_amount
+        tests: [not_null]

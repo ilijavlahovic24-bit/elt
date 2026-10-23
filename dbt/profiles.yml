@@ -1,0 +1,22 @@
+# dbt/profiles.yml
+# Connection config. In real projects this lives in ~/.dbt/profiles.yml
+# and is *not* committed (contains credentials).
+# We commit it here because DuckDB needs no secrets - the point of the local setup.
+
+retail_elt:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "../data/warehouse/retail.duckdb"
+      threads: 4
+      schema: main
+    # Cloud switch . Same dbt models target BigQuery
+    # by changing target: prod.
+    # prod:
+    #   type: bigquery
+    #   method: service-account
+    #   project: <gcp-project>
+    #   dataset: retail_prod
+    #   keyfile: ~/.gcp/sa.json
+    #   threads: 4

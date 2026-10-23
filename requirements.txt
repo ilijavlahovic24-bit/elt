@@ -1,2 +1,5 @@
+duckdb
 pyarrow
 pandas
+requests
+dbt-duckdb

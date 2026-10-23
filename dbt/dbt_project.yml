@@ -1,0 +1,28 @@
+# dbt/dbt_project.yml
+# Project-level config. Tells dbt where things live and how to materialize them.
+
+name: 'retail_elt'
+version: '1.0.0'
+config-version: 2
+profile: 'retail_elt'   # must match a profile in profiles.yml
+
+model-paths: ["models"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  retail_elt:
+    staging:
+      # Staging = views. Cheap, always reflects latest raw.
+      # Why view? Staging is cheap renames + casts; materializing as table adds
+      # storage for no gain, and freshness is guaranteed by re-reading raw.
+      +materialized: view
+      +schema: staging
+
+    marts:
+      # Marts = tables. Queried by BI tools / dashboards; joins are expensive
+      # to re-run on every query, so we pay once at build time.
+      +materialized: table
+      +schema: marts

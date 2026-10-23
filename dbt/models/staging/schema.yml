@@ -1,0 +1,37 @@
+# dbt/models/staging/schema.yml
+# Tests for stg_orders. Four core dbt tests - no extra packages needed.
+
+version: 2
+
+models:
+  - name: stg_orders
+    description: "Cleaned and typed orders, 1:1 with raw.orders. No business logic."
+    columns:
+      - name: order_id
+        description: "Order identifier (one row per order line)"
+        tests:
+          - not_null      # no NULL order_id
+          - unique        # no duplicate order_id
+
+      - name: customer_id
+        description: "Customer identifier"
+        tests:
+          - not_null
+
+      - name: quantity
+        tests:
+          - not_null
+
+      - name: unit_price
+        tests:
+          - not_null
+
+      - name: order_date
+        tests:
+          - not_null
+
+      - name: region
+        description: "Sales region"
+        tests:
+          - accepted_values:
+              values: ['RS', 'DE', 'FR', 'IT', 'ES']
