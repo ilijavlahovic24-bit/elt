@@ -34,3 +34,4 @@ doc/references/
 
 #data
 data/
+/dbt/target/
