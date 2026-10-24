@@ -22,7 +22,9 @@ def main() -> None:
     # as a real `date` column. No parse_filename() needed.
     con.execute(f"""
         CREATE OR REPLACE TABLE raw.orders AS
-        SELECT * FROM read_parquet('{RAW_GLOB}', hive_partitioning=true)
+        SELECT * EXCLUDE (filename)
+        FROM read_parquet('{RAW_GLOB}', filename=true, hive_partitioning=true)
+        QUALIFY row_number() OVER (PARTITION BY order_id ORDER BY date DESC) = 1
     """)
 
     n = con.execute("SELECT count(*) FROM raw.orders").fetchone()[0]

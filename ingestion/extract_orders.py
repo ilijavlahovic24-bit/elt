@@ -232,12 +232,14 @@ def write_partition(df: pd.DataFrame, run_date: date) -> Path:
 # 5. Entrypoint
 # -------------------------------------------------------------------------
 def main(run_date: date | None = None) -> None:
-    run_date = run_date or datetime.now(timezone.utc).date()
+    if run_date is None:
+        env_date = os.environ.get("RUN_DATE")
+        run_date = date.fromisoformat(env_date) if env_date else datetime.now(timezone.utc).date()
 
     df = extract_from_csv(SOURCE_CSV)
-    df = coerce_types(df)        # CSV strings -> typed columns
-    check_schema(df)             # verify final shape
-    check_volume(df, run_date)   # volume sanity
+    df = coerce_types(df)
+    check_schema(df)
+    check_volume(df, run_date)
     write_partition(df, run_date)
 
 

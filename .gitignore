@@ -3,6 +3,7 @@
 venv/
 env/
 ENV/
+*.env
 
 # PyCharm
 .idea/
