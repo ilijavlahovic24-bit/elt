@@ -28,4 +28,62 @@ dbt test
 cd ..
 ```
 
+Airflow (Docker) — Orchestration
+```
+cd airflow
+
+# Booting the entire Airflow environment (for the first time, or when changing the Dockerfile)
+docker compose up -d --build
+
+# Boot without rebuild (when only Python files within the project are changed)
+docker compose up -d
+
+# Extinguishing and cleaning the container (used when something gets stuck)
+docker compose down --remove-orphans
+
+# Container status check
+docker compose ps
+
+# Viewing logs (eg if the webserver won't boot)
+docker compose logs airflow-scheduler --tail 50
+docker compose logs airflow-webserver --tail 50
+
+# Manually creating an admin user (if the login does not work)
+docker compose exec airflow-scheduler airflow users create --role Admin --username admin --password admin --firstname Admin --lastname User --email admin@example.com
+
+# Manually running the DAG from the terminal (without opening the UI)
+docker compose exec airflow-scheduler airflow dags trigger retail_elt
+
+cd ..
+```
+
+Reset
+```
+Remove-Item -Recurse -Force data\raw -ErrorAction SilentlyContinue
+Remove-Item data\warehouse\retail.duckdb -ErrorAction SilentlyContinue
+```
+
 ## Project structure
+```
+retail-elt/
+├── README.md
+├── docker-compose.yml          # dolazi u Sesiji 5
+├── requirements.txt
+├── .gitignore
+├── data/
+│   ├── raw/                    # ignored u git-u
+│   └── warehouse/              # duckdb fajl, ignored
+├── ingestion/
+│   └── extract_orders.py
+├── dbt/
+│   ├── dbt_project.yml
+│   ├── profiles.yml
+│   └── models/
+│       ├── staging/
+│       └── marts/
+├── airflow/
+│   └── dags/
+│       └── retail_elt_dag.py
+└── tests/
+    └── quality_checks.sql
+```
